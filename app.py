@@ -2,7 +2,8 @@ import duckdb
 import streamlit as st
 import plotly.express as px
 
-from src.claude_agent import ask_claude
+# from src.claude_agent import ask_claude
+from src.claude_agent import ask_claude_stream
 
 
 # ============================================================
@@ -1012,19 +1013,43 @@ analyze_col, _ = st.columns([1.35, 4.65])
 with analyze_col:
     analyze_clicked = st.button("✨  Analyze", type="primary", key="analyze_prompt", use_container_width=True)
 
+
+
 if analyze_clicked:
     if not prompt.strip():
         st.warning("Please enter a question first.")
     else:
-        with st.spinner("AI analyst is analyzing the mortgage data..."):
-            try:
-                answer = ask_claude(prompt.strip())
-                st.markdown('<div class="response-header">Analyst Response</div>', unsafe_allow_html=True)
-                st.markdown('<div class="response-box">', unsafe_allow_html=True)
-                st.markdown(answer)
-                st.markdown('</div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Unable to complete the analysis: {e}")
+        status = st.status(
+            "Analyzing mortgage data...",
+            expanded=False,
+        )
+
+        try:
+            st.markdown(
+                '<div class="response-header">Analyst Response</div>',
+                unsafe_allow_html=True,
+            )
+
+            with st.container(border=True):
+                response_placeholder = st.empty()
+                answer = response_placeholder.write_stream(
+                    ask_claude_stream(prompt.strip())
+                )
+                response_placeholder.markdown(answer)
+
+            status.update(
+                label="Analysis complete",
+                state="complete",
+                expanded=False,
+            )
+
+        except Exception as e:
+            status.update(
+                label="Analysis failed",
+                state="error",
+                expanded=False,
+            )
+            st.error(f"Unable to complete the analysis: {e}")
 
 
 overview_tab, lending_tab, risk_tab = st.tabs(
