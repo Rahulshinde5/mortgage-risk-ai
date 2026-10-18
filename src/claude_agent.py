@@ -181,6 +181,14 @@ Your responsibilities:
     month-over-month or year-over-year.
 14. Do not describe a metric as "significant" unless the data provides
     an explicit threshold or the user asks for a descriptive assessment.
+15. Use clean, professional Markdown formatting.
+16. Start with one clear main heading, followed by descriptive section headings.
+17. Use plain text headings with  small emojis or decorative symbols wherever is necessary.
+18. Use concise bullet points for key metrics and observations.
+19. Use Markdown tables only when they improve comparison and readability.
+20. Avoid unnecessary introductory sentences before the main heading.
+21. Separate every heading and paragraph with appropriate blank lines.
+22. Do not include raw Markdown symbols in the final rendered answer.
 
 Tool selection:
 
@@ -208,12 +216,12 @@ The analytical database is the source of truth.
 # CLAUDE AGENT
 # ============================================================
 
-def ask_claude(user_prompt):
-    """
-    Send a user question to Claude and allow Claude to
-    select and execute analytical tools.
-    """
 
+def ask_claude_stream(user_prompt):
+    """
+    Run Claude's analytical tool loop and stream the final answer.
+    Tool execution and numerical calculations remain unchanged.
+    """
     messages = [
         {
             "role": "user",
@@ -221,69 +229,68 @@ def ask_claude(user_prompt):
         }
     ]
 
-    # --------------------------------------------------------
-    # First Claude call:
-    # Claude determines which analytical tool(s) are required.
-    # --------------------------------------------------------
-
-    response = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=1200,
-        system=SYSTEM_PROMPT,
-        tools=TOOLS,
-        messages=messages,
-    )
-
-    # --------------------------------------------------------
-    # Continue tool execution until Claude produces
-    # a final natural-language response.
-    # --------------------------------------------------------
-
-    while response.stop_reason == "tool_use":
-
-        messages.append(
-            {
-                "role": "assistant",
-                "content": response.content,
-            }
-        )
-
-        tool_results = []
-
-        for block in response.content:
-
-            if block.type == "tool_use":
-
-                result = execute_tool(
-                    block.name,
-                    block.input,
-                )
-
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(
-                            result,
-                            default=str,
-                        ),
-                    }
-                )
-
-        messages.append(
-            {
-                "role": "user",
-                "content": tool_results,
-            }
-        )
-
-        response = client.messages.create(
+    while True:
+        # Stream Claude's response, including tool-use responses.
+        with client.messages.stream(
             model="claude-sonnet-5",
             max_tokens=1200,
             system=SYSTEM_PROMPT,
             tools=TOOLS,
             messages=messages,
-        )
+        ) as stream:
+            for text_chunk in stream.text_stream:
+                yield text_chunk
+
+            response = stream.get_final_message()
+
+        # If Claude requests tools, execute them and continue.
+        if response.stop_reason == "tool_use":
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                }
+            )
+
+            tool_results = []
+
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = execute_tool(
+                        block.name,
+                        block.input,
+                    )
+
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(
+                                result,
+                                default=str,
+                            ),
+                        }
+                    )
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": tool_results,
+                }
+            )
+
+            continue
+
+        # Claude has finished its final answer.
+        break
+
+
+def ask_claude(user_prompt):
+    """
+    Backward-compatible function for any existing callers.
+    """
+    return "".join(ask_claude_stream(user_prompt))
+
 
     # --------------------------------------------------------
     # Extract Claude's final text response
